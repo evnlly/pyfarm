@@ -1,6 +1,8 @@
 import pygame, sys
 import pytmx
+import os
 
+print("Текущая рабочая директория:", os.getcwd())
 
 class Tile(pygame.sprite.Sprite):
 	def __init__(self, pos, surf, groups):
@@ -10,7 +12,7 @@ class Tile(pygame.sprite.Sprite):
 
 pygame.init()
 screen = pygame.display.set_mode((1280,720))
-tmx_data = pytmx.util_pygame.load_pygame('../things/graphics/map.tmx')
+tmx_data = pytmx.util_pygame.load_pygame('./things/graphics/map.tmx')
 sprite_group = pygame.sprite.Group()
 
 # cycle through all layers
