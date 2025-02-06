@@ -1,16 +1,16 @@
 import pygame
 from settings import *
-from support import *
 from timer import Timer
+from os import walk
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, pos, group):
+    def __init__(self, pos, group, collision_sprites):
         super().__init__(group)
 
-        self.import_assets()  # Импортируем анимационные кадры
-        self.status = 'down_idle'  # Начальный статус (стояние вниз)
-        self.frame_index = 0  # Индекс текущего кадра анимации
+        self.import_assets()  # Импортируем анимации игрока
+        self.status = 'down_idle'  # Начальный статус анимации
+        self.frame_index = 0  # Индекс кадра анимации
 
         # Общие настройки
         self.image = self.animations[self.status][self.frame_index]
@@ -18,131 +18,175 @@ class Player(pygame.sprite.Sprite):
         self.z = layers['main']
 
         # Атрибуты движения
-        self.direction = pygame.math.Vector2()  # Направление движения
-        self.pos = pygame.math.Vector2()  # Позиция игрока
-        self.speed = 200  # Скорость движения
+        self.direction = pygame.math.Vector2()
+        self.pos = pygame.math.Vector2(self.rect.center)
+        self.speed = 200  # Скорость передвижения
 
-        # Таймеры для инструментов и смены семян
+        # Коллизии
+        self.hitbox = self.rect.copy().inflate((-126, -70))  # Создание хитбокса
+        self.collision_sprites = collision_sprites  # Список объектов с коллизией
+
+        # Таймеры
         self.timers = {
-            'tool use': Timer(2000, self.use_tool),
+            'tool use': Timer(350, self.use_tool),
             'tool switch': Timer(200),
+            'seed use': Timer(350, self.use_seed),
             'seed switch': Timer(200),
-            'seed use': Timer(2000, self.use_seed)
         }
 
         # Инструменты
-        self.tools = ['hoe', 'axe', 'water']  # Доступные инструменты
-        self.tool_index = 0  # Индекс выбранного инструмента
-        self.selected_tool = self.tools[self.tool_index]  # Текущий выбранный инструмент
+        self.tools = ['hoe', 'axe']  # Доступные инструменты
+        self.tool_index = 0  # Индекс текущего инструмента
+        self.selected_tool = self.tools[self.tool_index]  # Выбранный инструмент
 
         # Семена
         self.seeds = ['corn', 'tomato']  # Доступные семена
-        self.seed_index = 0  # Индекс выбранного семени
-        self.selected_seed = self.seeds[self.seed_index]  # Текущее выбранное семя
+        self.seed_index = 0  # Индекс текущего семени
+        self.selected_seed = self.seeds[self.seed_index]  # Выбранное семя
+
+        # Инвентарь
+        self.item_inventory = {
+            'wood': 20,
+            'apple': 20,
+            'corn': 20,
+            'tomato': 20
+        }
+        self.seed_inventory = {
+            'corn': 5,
+            'tomato': 5
+        }
+        self.money = 200  # Начальное количество денег
 
     def use_tool(self):
-        pass
+        pass  # Логика использования инструмента
+
+    def import_folder(self, path):
+        """Импортирует изображения из папки и возвращает список поверхностей"""
+        surface_list = []
+        for folder_name, sub_folder, img_files in walk(path):
+            for image in img_files:
+                full_path = path + '/' + image
+                image_surf = pygame.image.load(full_path).convert_alpha()
+                surface_list.append(image_surf)
+        return surface_list
+
+    def get_target_pos(self):
+        """Получает координаты цели в зависимости от направления игрока"""
+        self.target_pos = self.rect.center + player_tool_offset[self.status.split('_')[0]]
 
     def use_seed(self):
-        pass
+        pass  # Логика использования семян
 
     def import_assets(self):
-        # Импортируем все анимации для разных состояний игрока
+        """Импорт анимаций персонажа"""
         self.animations = {'up': [], 'down': [], 'left': [], 'right': [],
                            'right_idle': [], 'left_idle': [], 'up_idle': [], 'down_idle': [],
                            'right_hoe': [], 'left_hoe': [], 'up_hoe': [], 'down_hoe': [],
-                           'right_axe': [], 'left_axe': [], 'up_axe': [], 'down_axe': [],
-                           'right_water': [], 'left_water': [], 'up_water': [], 'down_water': []}
+                           'right_axe': [], 'left_axe': [], 'up_axe': [], 'down_axe': []}
+
         for animation in self.animations.keys():
             full_path = '../things/graphics/character/' + animation
-            self.animations[animation] = import_folder(full_path)  # Загружаем анимации
+            self.animations[animation] = self.import_folder(full_path)
 
     def animate(self, dt):
-        # Обновляем индекс кадра анимации
-        self.frame_index += 4 * dt  # Увеличиваем индекс кадра с учетом времени
-        if self.frame_index >= len(self.animations[self.status]):  # Если кадры закончились, начинаем сначала
+        """Анимация движения игрока"""
+        self.frame_index += 3 * dt
+        if self.frame_index >= len(self.animations[self.status]):
             self.frame_index = 0
-        self.image = self.animations[self.status][int(self.frame_index)]  # Обновляем изображение персонажа
+        self.image = self.animations[self.status][int(self.frame_index)]
 
     def input(self):
-        keys = pygame.key.get_pressed()  # Получаем состояние всех клавиш
+        """Обрабатывает ввод пользователя"""
+        keys = pygame.key.get_pressed()
 
-        if not self.timers['tool use'].active:  # Если таймер использования инструмента не активен
-            # Управление движением
+        if not self.timers['tool use'].active:
+            # Движение
             if keys[pygame.K_UP]:
-                self.status = 'up'  # Статус движения вверх
                 self.direction.y = -1
+                self.status = 'up'
             elif keys[pygame.K_DOWN]:
-                self.status = 'down'  # Статус движения вниз
                 self.direction.y = 1
+                self.status = 'down'
             else:
-                self.direction.y = 0  # Нет движения по вертикали
+                self.direction.y = 0
 
             if keys[pygame.K_RIGHT]:
-                self.direction.x = 1  # Статус движения вправо
+                self.direction.x = 1
                 self.status = 'right'
             elif keys[pygame.K_LEFT]:
-                self.direction.x = -1  # Статус движения влево
+                self.direction.x = -1
                 self.status = 'left'
             else:
-                self.direction.x = 0  # Нет движения по горизонтали
+                self.direction.x = 0
 
-            # Использование инструмента
-            if keys[pygame.K_SPACE]:
-                self.timers['tool use'].activate()  # Активируем таймер для использования инструмента
-                self.direction = pygame.math.Vector2()  # Останавливаем движение
-                self.frame_index = 0  # Сбрасываем анимацию
+            if keys[pygame.K_SPACE] and not self.timers['tool use'].active:
+                self.music = pygame.mixer.Sound(f'./things/graphics/audio/{self.selected_tool}.mp3')
+                self.music.play()
+                self.timers['tool use'].activate()
+                self.direction = pygame.math.Vector2()
+                self.frame_index = 0
 
-            # Смена инструмента
+            # Переключение инструмента
             if keys[pygame.K_q] and not self.timers['tool switch'].active:
-                self.timers['tool switch'].activate()  # Активируем таймер для смены инструмента
-                self.tool_index += 1  # Переходим к следующему инструменту
-                self.tool_index = self.tool_index if self.tool_index < len(self.tools) else 0  # Окружная смена
-                self.selected_tool = self.tools[self.tool_index]  # Обновляем выбранный инструмент
+                self.timers['tool switch'].activate()
+                self.tool_index = (self.tool_index + 1) % len(self.tools)
+                self.selected_tool = self.tools[self.tool_index]
 
-            # Использование семени
+            # Использование семян
             if keys[pygame.K_LCTRL]:
-                self.timers['seed use'].activate()  # Активируем таймер для использования семени
-                self.direction = pygame.math.Vector2()  # Останавливаем движение
-                self.frame_index = 0  # Сбрасываем анимацию
+                self.timers['seed use'].activate()
+                self.direction = pygame.math.Vector2()
+                self.frame_index = 0
 
-            # Смена семени
+            # Переключение семян
             if keys[pygame.K_e] and not self.timers['seed switch'].active:
-                self.timers['seed switch'].activate()  # Активируем таймер для смены семени
-                self.seed_index += 1  # Переходим к следующему семени
-                self.seed_index = self.seed_index if self.seed_index < len(self.seeds) else 0  # Окружная смена
-                self.selected_seed = self.seeds[self.seed_index]  # Обновляем выбранное семя
+                self.timers['seed switch'].activate()
+                self.seed_index = (self.seed_index + 1) % len(self.seeds)
+                self.selected_seed = self.seeds[self.seed_index]
 
     def get_status(self):
-        # Если игрок не двигается
+        """Обновляет статус игрока в зависимости от действий"""
         if self.direction.magnitude() == 0:
-            self.status = self.status.split('_')[0] + '_idle'  # Статус становится "idle" (стояние)
-
-        # Если используется инструмент
+            self.status = self.status.split('_')[0] + '_idle'
         if self.timers['tool use'].active:
-            self.status = self.status.split('_')[0] + '_' + self.selected_tool  # Добавляем инструмент к статусу
-
-    def update_timers(self):
-        for timer in self.timers.values():  # Обновляем все таймеры
-            timer.update()
+            self.status = self.status.split('_')[0] + '_' + self.selected_tool
 
     def move(self, dt):
-        # Нормализуем вектор направления (чтобы движение было одинаковым по всем осям)
-        if self.direction.magnitude() > 0:
+        # Двигаем хитбокс вместо прямоугольника
+        if self.direction.magnitude() != 0:
             self.direction = self.direction.normalize()
 
-        # Движение по горизонтали
-        self.pos.x += self.direction.x * self.speed * dt
-        self.rect.centerx = self.pos.x
+        self.hitbox.x += self.direction.x * self.speed * dt
+        self.collision('horizontal')
 
-        # Движение по вертикали
-        self.pos.y += self.direction.y * self.speed * dt
-        self.rect.centery = self.pos.y
+        self.hitbox.y += self.direction.y * self.speed * dt
+        self.collision('vertical')
+
+        # Обновляем основную позицию игрока
+        self.rect.center = self.hitbox.center
 
     def update(self, dt):
+        """Обновление состояния игрока каждый кадр"""
+        for timer in self.timers.values():  # Обновляем все таймеры
+            timer.update()
         self.input()
+        self.get_target_pos()
         self.get_status()
-        self.update_timers()
-
         self.move(dt)
         self.animate(dt)
+
+    def collision(self, direction):
+        for sprite in self.collision_sprites:
+            if sprite.hitbox.colliderect(self.hitbox):
+                if direction == 'horizontal':
+                    if self.direction.x > 0:  # Вправо
+                        self.hitbox.right = sprite.hitbox.left
+                    if self.direction.x < 0:  # Влево
+                        self.hitbox.left = sprite.hitbox.right
+                if direction == 'vertical':
+                    if self.direction.y > 0:  # Вниз
+                        self.hitbox.bottom = sprite.hitbox.top
+                    if self.direction.y < 0:  # Вверх
+                        self.hitbox.top = sprite.hitbox.bottom
+
+
